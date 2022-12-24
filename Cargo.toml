@@ -1,6 +1,6 @@
 [package]
 name = "tokio-stream-multiplexor"
-version = "0.5.6"
+version = "0.5.7"
 authors = ["Greg \"GothAck\" Miell <rust@greg.gothack.ninja>"]
 description = "Stream Multiplexor for tokio with a tcp like interface"
 repository = "https://github.com/GothAck/tokio-stream-multiplexor"
@@ -11,22 +11,22 @@ license = "MIT"
 edition = "2021"
 
 [dependencies]
-async-channel = "1.6.1"
-bincode = "1.3.3"
-bytes = { version = "1.1.0", features = ["serde"] }
-futures = "0.3.17"
-futures-util = "0.3.17"
-rand = "0.8.4"
-serde = { version = "1.0.130", features = ["derive"] }
-tokio = { version = "1.13.0", features = ["io-util", "io-std", "rt", "net", "macros"] }
-tokio-util = { version = "0.6.9", features = ["codec"] }
-tracing = "0.1.29"
+async-channel = "1"
+bincode = "1"
+bytes = { version = "1", features = ["serde"] }
+futures = "0.3"
+futures-util = "0.3"
+rand = "0.8"
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["io-util", "io-std", "rt", "net", "macros"] }
+tokio-util = { version = "0.7", features = ["codec"] }
+tracing = "0.1"
 
 [dev-dependencies]
 criterion = { version = "0.3", features = ["async_tokio"] }
-ctor = "0.1.21"
-tokio = { version = "1.13.0", features = ["io-util", "io-std", "rt", "net", "macros", "time", "rt-multi-thread"] }
-tracing-subscriber = { version = "0.3.2", features = ["env-filter"] }
+ctor = "0.1"
+tokio = { version = "1", features = ["io-util", "io-std", "rt", "net", "macros", "time", "rt-multi-thread"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 version-sync = "0.9"
 
 [lib]

@@ -68,6 +68,7 @@ use socket::MuxSocket;
 pub type Result<T> = std::result::Result<T, io::Error>;
 
 /// The Stream Multiplexor.
+#[derive(Clone)]
 pub struct StreamMultiplexor<T> {
     inner: Arc<StreamMultiplexorInner<T>>,
 }
