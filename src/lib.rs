@@ -56,7 +56,7 @@ use tokio::{
     sync::{mpsc, watch, RwLock},
 };
 use tokio_util::codec::{FramedRead, FramedWrite};
-use tracing::{error, trace};
+use tracing::{debug, trace};
 
 pub use config::StreamMultiplexorConfig;
 use frame::{FrameDecoder, FrameEncoder};
@@ -85,7 +85,7 @@ impl<T> Debug for StreamMultiplexor<T> {
 impl<T> Drop for StreamMultiplexor<T> {
     fn drop(&mut self) {
         self.inner.watch_connected_send.send_replace(false);
-        error!("drop {:?}", self);
+        debug!("drop {:?}", self);
     }
 }
 
@@ -207,6 +207,36 @@ impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> StreamMultiplexor<T> {
     pub fn watch_connected(&self) -> watch::Receiver<bool> {
         trace!("");
         self.inner.watch_connected_send.subscribe()
+    }
+
+    /// Mark a port as closed.
+    /// Note that this method does not close the corresponding `DuplexStream`.
+    /// It is also unnecessary to call this method if you are not likely to
+    /// reuse the port or exhaust the port number space.
+    ///
+    /// # Safety
+    /// Only use this method if this port is allocated by `bind()`.
+    /// For `connect()`ed ports, use `close_connected_port()`.
+    /// Make sure the corresponding `DuplexStream` is dropped before calling this method.
+    pub async unsafe fn close_bound_port(&self, port: u16) {
+        self.inner.port_listeners.write().await.remove(&port);
+    }
+
+    /// Mark a port as closed.
+    /// Note that this method does not close the corresponding `DuplexStream`.
+    /// It is also unnecessary to call this method if you are not likely to
+    /// reuse the port or exhaust the port number space.
+    ///
+    /// # Safety
+    /// Only use this method if this port is allocated by `connect()`.
+    /// For `bind()`ed ports, use `close_bound_port()`.
+    /// Make sure the corresponding `DuplexStream` is dropped before calling this method.
+    pub async unsafe fn close_connected_port(&self, sport: u16, dport: u16) {
+        self.inner
+            .port_connections
+            .write()
+            .await
+            .remove(&(sport, dport));
     }
 }
 

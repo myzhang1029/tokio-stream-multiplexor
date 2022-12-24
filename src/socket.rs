@@ -14,7 +14,7 @@ use tokio::{
     io::{duplex, split, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadHalf, WriteHalf},
     sync::{mpsc, watch, RwLock},
 };
-use tracing::{error, info, trace};
+use tracing::{debug, error, trace};
 
 use crate::{
     frame::{Flag, Frame},
@@ -54,7 +54,7 @@ impl<T> Debug for MuxSocket<T> {
 
 impl<T> Drop for MuxSocket<T> {
     fn drop(&mut self) {
-        error!("drop {:?}", self);
+        debug!("drop {:?}", self);
     }
 }
 
@@ -86,7 +86,7 @@ impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> MuxSocket<T> {
         receiver
     }
 
-    #[tracing::instrument]
+    #[tracing::instrument(level = "trace")]
     pub async fn start(self: &Arc<Self>) {
         trace!("");
         if let Err(error) = self
@@ -102,7 +102,7 @@ impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> MuxSocket<T> {
         *self.state.write().await = PortState::Ack;
     }
 
-    #[tracing::instrument]
+    #[tracing::instrument(level = "trace")]
     async fn spawn_stream(self: &Arc<Self>) -> DuplexStream {
         trace!("");
         let (s1, s2) = duplex(self.inner.config.max_frame_size);
@@ -116,7 +116,7 @@ impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> MuxSocket<T> {
         s1
     }
 
-    #[tracing::instrument]
+    #[tracing::instrument(level = "trace")]
     async fn stream_read(self: Arc<Self>, read_half: ReadHalf<DuplexStream>) {
         trace!("");
         let mut rst = self.rst.subscribe();
@@ -125,7 +125,7 @@ impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> MuxSocket<T> {
         let mut buf: Vec<u8> = vec![];
         buf.resize(self.inner.config.buf_size, 0);
         loop {
-            info!("stream_read loop");
+            debug!("stream_read loop");
             if *rst.borrow() {
                 trace!("Rst is true");
                 break;
@@ -200,7 +200,7 @@ impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> MuxSocket<T> {
         }
     }
 
-    #[tracing::instrument]
+    #[tracing::instrument(level = "trace")]
     pub async fn recv_frame(self: &Arc<Self>, frame: Frame) {
         trace!("");
         let state: PortState = *self.state.read().await;

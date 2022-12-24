@@ -17,7 +17,7 @@ use tokio::{
     sync::{mpsc, watch, RwLock},
 };
 use tokio_util::codec::{FramedRead, FramedWrite};
-use tracing::{error, trace};
+use tracing::{debug, error, trace};
 
 use crate::{
     config::StreamMultiplexorConfig,
@@ -49,12 +49,12 @@ impl<T> Debug for StreamMultiplexorInner<T> {
 impl<T> Drop for StreamMultiplexorInner<T> {
     fn drop(&mut self) {
         self.watch_connected_send.send_replace(false);
-        error!("drop {:?}", self);
+        debug!("drop {:?}", self);
     }
 }
 
 impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> StreamMultiplexorInner<T> {
-    #[tracing::instrument(skip(recv, framed_writer))]
+    #[tracing::instrument(skip(recv, framed_writer), level = "trace")]
     pub async fn framed_writer_sender(
         self: Arc<Self>,
         mut recv: mpsc::Receiver<Frame>,
@@ -98,7 +98,7 @@ impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> StreamMultiplexorInner<
         }
     }
 
-    #[tracing::instrument(skip(framed_reader))]
+    #[tracing::instrument(skip(framed_reader), level = "trace")]
     pub async fn framed_reader_sender(
         self: Arc<Self>,
         mut framed_reader: FramedRead<ReadHalf<T>, FrameDecoder>,
@@ -168,7 +168,7 @@ impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> StreamMultiplexorInner<
         }
     }
 
-    #[tracing::instrument]
+    #[tracing::instrument(level = "debug")]
     pub async fn handle_disconnected(
         self: Arc<Self>,
         mut watch_connected_recv: watch::Receiver<bool>,
