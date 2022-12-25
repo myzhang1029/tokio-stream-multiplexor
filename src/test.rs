@@ -32,16 +32,6 @@ fn init_tests() {
         .init();
 }
 
-#[test]
-fn test_readme_deps() {
-    version_sync::assert_markdown_deps_updated!("src/lib.rs");
-}
-
-#[test]
-fn test_html_root_url() {
-    version_sync::assert_html_root_url_updated!("src/lib.rs");
-}
-
 #[tokio::test]
 #[tracing::instrument]
 async fn connect_no_listen_fails() {
@@ -130,10 +120,11 @@ async fn connected_stream_passes_data() {
         let mut i = 0;
         while i < input_bytes_clone.len() {
             let res = conn.write_all(&input_bytes_clone[i..i + 1024]).await;
-            assert!(matches!(res, Ok(..)));
+            assert!(res.is_ok());
             i += 1024;
         }
-        sleep(Duration::from_millis(1)).await; // FIXME: Shouldn't need to sleep here?
+        sleep(Duration::from_secs(2)).await; // FIXME: Shouldn't need to sleep here?
+                                             // FIXME: should be able to read() after remote drop()
         info!("Done send");
     });
 
@@ -149,7 +140,7 @@ async fn connected_stream_passes_data() {
         output_bytes.extend_from_slice(&buf[..bytes]);
     }
 
-    assert!(input_bytes == output_bytes);
+    assert_eq!(input_bytes, output_bytes);
 }
 
 #[tokio::test]
