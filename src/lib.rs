@@ -1,6 +1,6 @@
 //! # Tokio Stream Multiplexor
 //!
-//! TL;DR: Multiplex multiple streams over a single stream. Has a TcpListener / TcpSocket style interface, and uses u16 ports similar to TCP itself.
+//! TL;DR: Multiplex multiple streams over a single stream. Has a `TcpListener` / `TcpSocket` style interface, and uses u16 ports similar to TCP itself.
 //!
 //! ```toml
 //! [dependencies]
@@ -102,7 +102,7 @@ impl<T> StreamMultiplexor<T> {
         self.inner.running.send_replace(true);
     }
 
-    /// Shut down the StreamMultiplexor<T> instance and drop reference
+    /// Shut down the `StreamMultiplexor<T>` instance and drop reference
     /// to the inner stream to close it.
     pub fn close(&self) {
         self.inner.watch_connected_send.send_replace(false);

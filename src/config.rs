@@ -18,7 +18,7 @@ pub struct StreamMultiplexorConfig {
 }
 
 impl Default for StreamMultiplexorConfig {
-    /// Construct a default StreamMultiplexorConfig
+    /// Construct a default `StreamMultiplexorConfig`
     fn default() -> Self {
         Self {
             max_frame_size: 4 * 1024 * 1024,
@@ -32,6 +32,7 @@ impl Default for StreamMultiplexorConfig {
 
 impl StreamMultiplexorConfig {
     /// Add identifier static &str to config
+    #[must_use]
     pub fn with_identifier(mut self, identifier: &'static str) -> Self {
         self.identifier = identifier;
         self

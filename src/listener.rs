@@ -60,6 +60,7 @@ impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> MuxListener<T> {
     }
 
     /// Get the port number of this listener
+    #[must_use]
     pub fn port(&self) -> u16 {
         self.port
     }
