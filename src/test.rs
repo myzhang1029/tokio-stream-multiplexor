@@ -46,7 +46,7 @@ async fn connect_no_listen_fails() {
         StreamMultiplexorConfig::default().with_identifier("sm_b"),
     );
 
-    assert!(matches!(sm_a.connect(22).await, Err(_)));
+    assert!(sm_a.connect(22).await.is_err());
 }
 
 #[tokio::test]
@@ -93,7 +93,6 @@ async fn dropped_connection_rsts() {
     let res = sm_a.connect(22).await;
     assert!(matches!(res, Ok(_)));
     let res = res.unwrap().write_all(&[0u8; 1024]).await;
-    println!("{:?}", res);
     assert!(matches!(res, Err(_)));
 }
 
@@ -123,8 +122,8 @@ async fn connected_stream_passes_data() {
             assert!(res.is_ok());
             i += 1024;
         }
-        sleep(Duration::from_secs(2)).await; // FIXME: Shouldn't need to sleep here?
-                                             // FIXME: should be able to read() after remote drop()
+        // FIXME: should be able to read() after remote drop()
+        conn.read_i8().await.unwrap();
         info!("Done send");
     });
 
@@ -139,6 +138,7 @@ async fn connected_stream_passes_data() {
         }
         output_bytes.extend_from_slice(&buf[..bytes]);
     }
+    conn.write_i8(0).await.unwrap();
 
     assert_eq!(input_bytes, output_bytes);
 }

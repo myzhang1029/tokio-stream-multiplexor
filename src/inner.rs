@@ -32,8 +32,14 @@ pub(crate) struct StreamMultiplexorInner<T> {
     pub connected: AtomicBool,
     pub port_connections: RwLock<HashMap<PortPair, Arc<MuxSocket<T>>>>,
     pub port_listeners: RwLock<HashMap<u16, async_channel::Sender<DuplexStream>>>,
+    /// The sender for the watch channel that is used to signal that the mux is connected or not.
     pub watch_connected_send: watch::Sender<bool>,
+    /// The sender of ports that may be freed.
+    pub may_close_listeners: mpsc::UnboundedSender<u16>,
+    /// The sender of connection ports that may be freed.
+    pub may_close_connections: mpsc::UnboundedSender<PortPair>,
     pub send: RwLock<mpsc::Sender<Frame>>,
+    /// The sender for the watch channel that is used to signal that the mux is running or not.
     pub running: watch::Sender<bool>,
 }
 
@@ -168,15 +174,55 @@ impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> StreamMultiplexorInner<
         }
     }
 
+    /// Process `may_close_listeners_recv` channel.
+    /// Use in a `select!` statement.
+    async fn process_may_close_listeners_once(
+        &self,
+        may_close_listeners_recv: &mut mpsc::UnboundedReceiver<u16>,
+    ) {
+        if let Some(dport) = may_close_listeners_recv.recv().await {
+            debug!("Freeing listener at port {}", dport);
+            let mut port_listeners = self.port_listeners.write().await;
+            if let Some(listener) = port_listeners.remove(&dport) {
+                listener.close();
+            }
+        }
+    }
+
+    /// Process `may_close_connections_recv` channel.
+    /// Use in a `select!` statement.
+    async fn process_may_close_connections_once(
+        &self,
+        may_close_connections_recv: &mut mpsc::UnboundedReceiver<PortPair>,
+    ) {
+        if let Some((dport, sport)) = may_close_connections_recv.recv().await {
+            debug!("Freeing connection from port {} to port {}", sport, dport);
+            let mut port_connections = self.port_connections.write().await;
+            port_connections.remove(&(dport, sport));
+        }
+    }
+
+    /// Mux maintenance task.
+    /// - Free ports when the listener is dropped.
+    /// - Free ports when the socket is dropped.
+    /// - RST all connections when the mux is disconnected/dropped.
     #[tracing::instrument(level = "debug")]
-    pub async fn handle_disconnected(
+    pub async fn handle_mux_state_change(
         self: Arc<Self>,
         mut watch_connected_recv: watch::Receiver<bool>,
+        mut may_close_listeners_recv: mpsc::UnboundedReceiver<u16>,
+        mut may_close_connections_recv: mpsc::UnboundedReceiver<(u16, u16)>,
     ) {
         if *watch_connected_recv.borrow() {
-            while watch_connected_recv.changed().await.is_ok() {
-                if !*watch_connected_recv.borrow() {
-                    break;
+            loop {
+                tokio::select! {
+                    r = watch_connected_recv.changed() => {
+                        if !*watch_connected_recv.borrow() || r.is_err() {
+                            break;
+                        }
+                    }
+                    _ = self.process_may_close_connections_once(&mut may_close_connections_recv) => {}
+                    _ = self.process_may_close_listeners_once(&mut may_close_listeners_recv) => {}
                 }
             }
         }
