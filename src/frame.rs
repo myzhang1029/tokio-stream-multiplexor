@@ -73,20 +73,20 @@ impl Frame {
     }
 }
 
-impl Into<Message> for Frame {
+impl From<Frame> for Message {
     #[tracing::instrument(skip_all, level = "trace")]
-    fn into(mut self) -> Message {
+    fn from(mut frame: Frame) -> Message {
         let size = std::mem::size_of::<u16>()
             + std::mem::size_of::<u16>()
             + std::mem::size_of::<Flag>()
             + std::mem::size_of::<u32>()
-            + self.data.len();
+            + frame.data.len();
         let mut encoded = Vec::with_capacity(size);
-        encoded.extend_from_slice(&self.sport.to_be_bytes());
-        encoded.extend_from_slice(&self.dport.to_be_bytes());
-        encoded.extend_from_slice(&(self.flag as u8).to_be_bytes());
-        encoded.extend_from_slice(&self.seq.to_be_bytes());
-        encoded.append(&mut self.data);
+        encoded.extend_from_slice(&frame.sport.to_be_bytes());
+        encoded.extend_from_slice(&frame.dport.to_be_bytes());
+        encoded.extend_from_slice(&(frame.flag as u8).to_be_bytes());
+        encoded.extend_from_slice(&frame.seq.to_be_bytes());
+        encoded.append(&mut frame.data);
         Message::Binary(encoded)
     }
 }
