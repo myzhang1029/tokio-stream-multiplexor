@@ -3,7 +3,7 @@ use std::sync::{
     Arc,
 };
 
-use futures::StreamExt;
+use futures_util::stream::StreamExt;
 use tokio::{
     io::{duplex, AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},

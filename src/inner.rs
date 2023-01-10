@@ -10,8 +10,8 @@ use std::{
 
 extern crate async_channel;
 
-use futures::StreamExt;
 use futures_util::sink::SinkExt;
+use futures_util::stream::StreamExt;
 use futures_util::{Sink as FutureSink, Stream as FutureStream};
 use tokio::{
     io::DuplexStream,
