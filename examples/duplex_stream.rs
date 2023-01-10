@@ -1,12 +1,12 @@
 use tokio::io::{duplex, AsyncReadExt, AsyncWriteExt};
-use tokio_stream_multiplexor::{StreamMultiplexor, StreamMultiplexorConfig};
+use tokio_stream_multiplexor::{Config, WebSocketMultiplexor};
 
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
     let (stream_0, stream_1) = duplex(10);
 
-    let mux_0 = StreamMultiplexor::new(stream_0, StreamMultiplexorConfig::default());
-    let mux_1 = StreamMultiplexor::new(stream_1, StreamMultiplexorConfig::default());
+    let mux_0 = WebSocketMultiplexor::new(stream_0, Config::default());
+    let mux_1 = WebSocketMultiplexor::new(stream_1, Config::default());
 
     let listener = mux_0.bind(23).await?;
     tokio::spawn(async move {

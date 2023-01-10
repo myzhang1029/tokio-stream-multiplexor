@@ -1,6 +1,6 @@
 #[derive(Copy, Clone, Debug)]
-/// Config struct for `StreamMultiplexor<T>`.
-pub struct StreamMultiplexorConfig {
+/// Config struct for `WebSocketMultiplexor<T>`.
+pub struct Config {
     /// Frames larger than this size will be dropped.
     pub max_frame_size: usize,
     /// Buffer size when reading / writing to vended streams,
@@ -12,13 +12,13 @@ pub struct StreamMultiplexorConfig {
     /// How many pending connections do we queue waiting on
     /// `accept()` to be called.
     pub accept_queue_len: usize,
-    /// An identifier for this `StreamMultiplexor<T>`.
+    /// An identifier for this `WebSocketMultiplexor<T>`.
     /// Used in tracing logs.
     pub identifier: &'static str,
 }
 
-impl Default for StreamMultiplexorConfig {
-    /// Construct a default `StreamMultiplexorConfig`
+impl Default for Config {
+    /// Construct a default `Config`
     fn default() -> Self {
         Self {
             max_frame_size: 4 * 1024 * 1024,
@@ -30,7 +30,7 @@ impl Default for StreamMultiplexorConfig {
     }
 }
 
-impl StreamMultiplexorConfig {
+impl Config {
     /// Add identifier static &str to config
     #[must_use]
     pub fn with_identifier(mut self, identifier: &'static str) -> Self {

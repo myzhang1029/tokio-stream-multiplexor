@@ -11,14 +11,14 @@ extern crate async_channel;
 
 pub use tokio::io::DuplexStream;
 use tokio::{
-    io::{duplex, split, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadHalf, WriteHalf},
+    io::{duplex, split, AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf},
     sync::{mpsc, watch, RwLock},
 };
 use tracing::{debug, error, trace};
 
 use crate::{
     frame::{Flag, Frame},
-    inner::StreamMultiplexorInner,
+    inner::WebSocketMultiplexorInner,
     Result,
 };
 
@@ -30,8 +30,8 @@ enum PortState {
     Open,
 }
 
-pub(crate) struct MuxSocket<T> {
-    inner: Arc<StreamMultiplexorInner<T>>,
+pub(crate) struct MuxSocket<Sink, Stream> {
+    inner: Arc<WebSocketMultiplexorInner<Sink, Stream>>,
     accepting: bool,
     sport: u16,
     dport: u16,
@@ -42,7 +42,7 @@ pub(crate) struct MuxSocket<T> {
     pub(crate) external_stream_sender: RwLock<Option<mpsc::Sender<Result<DuplexStream>>>>,
 }
 
-impl<T> Debug for MuxSocket<T> {
+impl<Sink, Stream> Debug for MuxSocket<Sink, Stream> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         f.debug_struct("MuxSocket")
             .field("id", &self.inner.config.identifier)
@@ -52,7 +52,7 @@ impl<T> Debug for MuxSocket<T> {
     }
 }
 
-impl<T> Drop for MuxSocket<T> {
+impl<Sink, Stream> Drop for MuxSocket<Sink, Stream> {
     fn drop(&mut self) {
         self.inner
             .may_close_connections
@@ -62,9 +62,9 @@ impl<T> Drop for MuxSocket<T> {
     }
 }
 
-impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> MuxSocket<T> {
+impl<Sink: 'static, Stream: 'static> MuxSocket<Sink, Stream> {
     pub fn new(
-        inner: Arc<StreamMultiplexorInner<T>>,
+        inner: Arc<WebSocketMultiplexorInner<Sink, Stream>>,
         sport: u16,
         dport: u16,
         accepting: bool,

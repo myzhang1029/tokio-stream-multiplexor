@@ -49,18 +49,15 @@ use std::{
 };
 
 extern crate async_channel;
+use futures_util::{Sink as FutureSink, Stream as FutureStream};
 use rand::Rng;
 pub use tokio::io::DuplexStream;
-use tokio::{
-    io::{split, AsyncRead, AsyncWrite},
-    sync::{mpsc, watch, RwLock},
-};
-use tokio_util::codec::{FramedRead, FramedWrite};
+use tokio::sync::{mpsc, watch, RwLock};
 use tracing::{debug, trace};
+use tungstenite::Message;
 
-pub use config::StreamMultiplexorConfig;
-use frame::{FrameDecoder, FrameEncoder};
-use inner::StreamMultiplexorInner;
+pub use config::Config;
+use inner::WebSocketMultiplexorInner;
 pub use listener::MuxListener;
 use socket::MuxSocket;
 
@@ -70,72 +67,72 @@ pub type Result<T> = std::result::Result<T, io::Error>;
 /// The Stream Multiplexor.
 ///
 /// # Drop
-/// When the `StreamMultiplexor` is dropped, it will send RST to all open
+/// When the `WebSocketMultiplexor` is dropped, it will send RST to all open
 /// connections and listeners.
 #[derive(Clone)]
-pub struct StreamMultiplexor<T> {
-    inner: Arc<StreamMultiplexorInner<T>>,
+pub struct WebSocketMultiplexor<Sink, Stream> {
+    inner: Arc<WebSocketMultiplexorInner<Sink, Stream>>,
 }
 
-impl<T> Debug for StreamMultiplexor<T> {
+impl<Sink, Stream> Debug for WebSocketMultiplexor<Sink, Stream> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        f.debug_struct("StreamMultiplexor")
+        f.debug_struct("WebSocketMultiplexor")
             .field("id", &self.inner.config.identifier)
             .field("inner", &self.inner)
             .finish()
     }
 }
 
-impl<T> Drop for StreamMultiplexor<T> {
+impl<Sink, Stream> Drop for WebSocketMultiplexor<Sink, Stream> {
     fn drop(&mut self) {
         self.close();
         debug!("drop {:?}", self);
     }
 }
 
-impl<T> StreamMultiplexor<T> {
+impl<Sink, Stream> WebSocketMultiplexor<Sink, Stream> {
     /// Start processing the inner stream.
     ///
-    /// Only effective on a paused `StreamMultiplexor<T>`.
-    /// See `new_paused(inner: T, config: StreamMultiplexorConfig)`.
+    /// Only effective on a paused `WebSocketMultiplexor<T>`.
+    /// See `new_paused(inner: T, config: Config)`.
     pub fn start(&self) {
         self.inner.running.send_replace(true);
     }
 
-    /// Shut down the `StreamMultiplexor<T>` instance and drop reference
+    /// Shut down the `WebSocketMultiplexor<T>` instance and drop reference
     /// to the inner stream to close it.
     pub fn close(&self) {
         self.inner.watch_connected_send.send_replace(false);
     }
 }
 
-impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> StreamMultiplexor<T> {
-    /// Constructs a new `StreamMultiplexor<T>`.
-    pub fn new(inner: T, config: StreamMultiplexorConfig) -> Self {
-        Self::new_running(inner, config, true)
+impl<Sink, Stream> WebSocketMultiplexor<Sink, Stream>
+where
+    Sink: FutureSink<Message, Error = tungstenite::Error> + Send + Unpin + 'static,
+    Stream: FutureStream<Item = tungstenite::Result<Message>> + Send + Unpin + 'static,
+{
+    /// Constructs a new `WebSocketMultiplexor<T>`.
+    pub fn new(sink: Sink, stream: Stream, config: Config) -> Self {
+        Self::new_running(sink, stream, config, true)
     }
 
-    /// Constructs a new paused `StreamMultiplexor<T>`.
+    /// Constructs a new paused `WebSocketMultiplexor<T>`.
     ///
     /// This allows you to bind and listen on a bunch of ports before
     /// processing any packets from the inner stream, removing race conditions
     /// between bind and connect. Call `start()` to start processing the
     /// inner stream.
-    pub fn new_paused(inner: T, config: StreamMultiplexorConfig) -> Self {
-        Self::new_running(inner, config, false)
+    pub fn new_paused(sink: Sink, stream: Stream, config: Config) -> Self {
+        Self::new_running(sink, stream, config, false)
     }
 
-    fn new_running(inner: T, config: StreamMultiplexorConfig, running: bool) -> Self {
-        let (reader, writer) = split(inner);
-
-        let framed_reader = FramedRead::new(reader, FrameDecoder::new(config));
-        let framed_writer = FramedWrite::new(writer, FrameEncoder::new(config));
+    fn new_running(sink: Sink, stream: Stream, config: Config, running: bool) -> Self {
         let (send, recv) = mpsc::channel(config.max_queued_frames);
         let (watch_connected_send, watch_connected_recv) = watch::channel(true);
         let (running, _) = watch::channel(running);
         let (may_close_listeners_send, may_close_listeners_recv) = mpsc::unbounded_channel();
         let (may_close_connections_send, may_close_connections_recv) = mpsc::unbounded_channel();
-        let inner = Arc::from(StreamMultiplexorInner {
+        let inner = Arc::from(WebSocketMultiplexorInner {
             config,
             connected: AtomicBool::from(true),
             port_connections: RwLock::from(HashMap::new()),
@@ -147,8 +144,8 @@ impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> StreamMultiplexor<T> {
             running,
         });
 
-        tokio::spawn(inner.clone().framed_writer_sender(recv, framed_writer));
-        tokio::spawn(inner.clone().framed_reader_sender(framed_reader));
+        tokio::spawn(inner.clone().frame_writer_sender(recv, sink));
+        tokio::spawn(inner.clone().frame_reader_sender(stream));
         tokio::spawn(inner.clone().handle_mux_state_change(
             watch_connected_recv,
             may_close_listeners_recv,
@@ -160,7 +157,7 @@ impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> StreamMultiplexor<T> {
 
     /// Bind to port and return a `MuxListener<T>`.
     #[tracing::instrument]
-    pub async fn bind(&self, port: u16) -> Result<MuxListener<T>> {
+    pub async fn bind(&self, port: u16) -> Result<MuxListener<Sink, Stream>> {
         trace!("");
         if !self.inner.connected.load(Ordering::Relaxed) {
             return Err(io::Error::from(io::ErrorKind::ConnectionReset));

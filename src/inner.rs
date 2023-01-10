@@ -12,25 +12,26 @@ extern crate async_channel;
 
 use futures::StreamExt;
 use futures_util::sink::SinkExt;
+use futures_util::{Sink as FutureSink, Stream as FutureStream};
 use tokio::{
-    io::{AsyncRead, AsyncWrite, DuplexStream, ReadHalf, WriteHalf},
+    io::DuplexStream,
     sync::{mpsc, watch, RwLock},
 };
-use tokio_util::codec::{FramedRead, FramedWrite};
 use tracing::{debug, error, trace};
+use tungstenite::Message;
 
 use crate::{
-    config::StreamMultiplexorConfig,
-    frame::{Flag, Frame, FrameDecoder, FrameEncoder},
+    config::Config,
+    frame::{Flag, Frame},
     socket::MuxSocket,
 };
 
 type PortPair = (u16, u16);
 
-pub(crate) struct StreamMultiplexorInner<T> {
-    pub config: StreamMultiplexorConfig,
+pub(crate) struct WebSocketMultiplexorInner<Sink, Stream> {
+    pub config: Config,
     pub connected: AtomicBool,
-    pub port_connections: RwLock<HashMap<PortPair, Arc<MuxSocket<T>>>>,
+    pub port_connections: RwLock<HashMap<PortPair, Arc<MuxSocket<Sink, Stream>>>>,
     pub port_listeners: RwLock<HashMap<u16, async_channel::Sender<DuplexStream>>>,
     /// The sender for the watch channel that is used to signal that the mux is connected or not.
     pub watch_connected_send: watch::Sender<bool>,
@@ -43,31 +44,33 @@ pub(crate) struct StreamMultiplexorInner<T> {
     pub running: watch::Sender<bool>,
 }
 
-impl<T> Debug for StreamMultiplexorInner<T> {
+impl<Sink, Stream> Debug for WebSocketMultiplexorInner<Sink, Stream> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        f.debug_struct("StreamMultiplexorInner")
+        f.debug_struct("WebSocketMultiplexorInner")
             .field("id", &self.config.identifier)
             .field("connected", &self.connected)
             .finish()
     }
 }
 
-impl<T> Drop for StreamMultiplexorInner<T> {
+impl<Sink, Stream> Drop for WebSocketMultiplexorInner<Sink, Stream> {
     fn drop(&mut self) {
         self.watch_connected_send.send_replace(false);
         debug!("drop {:?}", self);
     }
 }
 
-impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> StreamMultiplexorInner<T> {
-    #[tracing::instrument(skip(recv, framed_writer), level = "trace")]
-    pub async fn framed_writer_sender(
+impl<Sink, Stream> WebSocketMultiplexorInner<Sink, Stream>
+where
+    Sink: FutureSink<Message, Error = tungstenite::Error> + Unpin + 'static,
+    Stream: FutureStream<Item = tungstenite::Result<Message>> + Unpin + 'static,
+{
+    #[tracing::instrument(skip(recv, frame_sink), level = "trace")]
+    pub async fn frame_writer_sender(
         self: Arc<Self>,
         mut recv: mpsc::Receiver<Frame>,
-        mut framed_writer: FramedWrite<WriteHalf<T>, FrameEncoder>,
+        mut frame_sink: Sink,
     ) {
-        trace!("");
-
         let mut running = self.running.subscribe();
         let mut connected = self.watch_connected_send.subscribe();
         while !*running.borrow() {
@@ -96,21 +99,25 @@ impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> StreamMultiplexorInner<
                     continue;
                 }
             };
-            if let Err(error) = framed_writer.send(frame).await {
-                error!("Error {:?} reading from stream", error);
-                self.watch_connected_send.send_replace(false);
-                break;
+            match frame.try_into() {
+                Ok(message) => {
+                    if let Err(error) = frame_sink.send(message).await {
+                        error!("Error {:?} sending to stream", error);
+                        self.watch_connected_send.send_replace(false);
+                        break;
+                    }
+                }
+                Err(error) => {
+                    error!("Error {:?} converting frame to message", error);
+                    self.watch_connected_send.send_replace(false);
+                    break;
+                }
             }
         }
     }
 
-    #[tracing::instrument(skip(framed_reader), level = "trace")]
-    pub async fn framed_reader_sender(
-        self: Arc<Self>,
-        mut framed_reader: FramedRead<ReadHalf<T>, FrameDecoder>,
-    ) {
-        trace!("");
-
+    #[tracing::instrument(skip(frame_stream), level = "trace")]
+    pub async fn frame_reader_sender(self: Arc<Self>, mut frame_stream: Stream) {
         let mut running = self.running.subscribe();
         let mut connected = self.watch_connected_send.subscribe();
         while !*running.borrow() {
@@ -125,9 +132,16 @@ impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> StreamMultiplexorInner<
                 break;
             }
             let frame: Frame = tokio::select! {
-                res = framed_reader.next() => {
-                    if let Some(Ok(value)) = res {
-                        value
+                res = frame_stream.next() => {
+                    if let Some(Ok(message)) = res {
+                        match Frame::try_from(message) {
+                            Ok(frame) => frame,
+                            Err(error) => {
+                                error!("Error {:?} converting message to frame", error);
+                                self.watch_connected_send.send_replace(false);
+                                break;
+                            }
+                        }
                     } else {
                         error!("Error {:?} reading from framed_reader", res);
                         self.watch_connected_send.send_replace(false);

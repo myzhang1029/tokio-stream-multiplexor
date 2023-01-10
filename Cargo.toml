@@ -1,10 +1,9 @@
 [package]
-name = "tokio-stream-multiplexor"
-version = "0.5.7"
-authors = ["Greg \"GothAck\" Miell <rust@greg.gothack.ninja>"]
-description = "Stream Multiplexor for tokio with a tcp like interface"
-repository = "https://github.com/GothAck/tokio-stream-multiplexor"
-documentation = "https://docs.rs/tokio-stream-multiplexor"
+name = "websocket-multiplexor"
+version = "0.1"
+authors = ["Greg \"GothAck\" Miell <rust@greg.gothack.ninja>", "Zhang Maiyun <me@myzhangll.xyz>"]
+description = "Tungstenite WebSocket Multiplexor with a TCP-like interface"
+repository = "https://github.com/myzhang1029/tokio-stream-multiplexor"
 categories = ["asynchronous", "network-programming"]
 readme = "README.md"
 license = "MIT"
@@ -13,14 +12,13 @@ edition = "2021"
 [dependencies]
 async-channel = "1"
 bincode = "1"
-bytes = { version = "1", features = ["serde"] }
 futures = "0.3"
 futures-util = "0.3"
 rand = "0.8"
 serde = { version = "1", features = ["derive"] }
-tokio = { version = "1", features = ["io-util", "io-std", "rt", "net", "macros"] }
-tokio-util = { version = "0.7", features = ["codec"] }
+tokio = { version = "1", features = ["io-util", "io-std", "rt", "sync", "net", "macros"] }
 tracing = "0.1"
+tungstenite = "0.18"
 
 [dev-dependencies]
 criterion = { version = "0.3", features = ["async_tokio"] }
