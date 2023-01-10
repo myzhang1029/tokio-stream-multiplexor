@@ -252,7 +252,7 @@ async fn wrapped_stream_disconnect_after_bind_connect_accept() {
     });
 
     let stream = TcpStream::connect(local_addr).await.unwrap();
-    let a_ws = WebSocketStream::from_raw_socket(stream, Role::Client, None).await;
+    let a_ws = WebSocketStream::from_raw_socket(stream, Role::Server, None).await;
     let (a_sink, a_stream) = a_ws.split();
     let sm_a =
         WebSocketMultiplexor::new(a_sink, a_stream, Config::default().with_identifier("sm_a"));

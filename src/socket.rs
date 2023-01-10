@@ -126,8 +126,7 @@ impl<Sink: 'static, Stream: 'static> MuxSocket<Sink, Stream> {
         let mut rst = self.rst.subscribe();
         let mut connected = self.inner.watch_connected_send.subscribe();
         let mut read_half = read_half;
-        let mut buf: Vec<u8> = vec![];
-        buf.resize(self.inner.config.buf_size, 0);
+        let mut buf: Vec<u8> = vec![0; self.inner.config.buf_size];
         loop {
             debug!("stream_read loop");
             if *rst.borrow() {
