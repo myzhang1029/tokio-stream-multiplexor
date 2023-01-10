@@ -1,6 +1,6 @@
 [package]
 name = "websocket-multiplexor"
-version = "0.1"
+version = "0.1.0"
 authors = ["Greg \"GothAck\" Miell <rust@greg.gothack.ninja>", "Zhang Maiyun <me@myzhangll.xyz>"]
 description = "Tungstenite WebSocket Multiplexor with a TCP-like interface"
 repository = "https://github.com/myzhang1029/tokio-stream-multiplexor"
@@ -13,7 +13,7 @@ edition = "2021"
 async-channel = "1"
 bincode = "1"
 futures = "0.3"
-futures-util = "0.3"
+futures-util = { version = "0.3", default-features = false }
 rand = "0.8"
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["io-util", "io-std", "rt", "sync", "net", "macros"] }
@@ -24,6 +24,7 @@ tungstenite = "0.18"
 criterion = { version = "0.3", features = ["async_tokio"] }
 ctor = "0.1"
 tokio = { version = "1", features = ["io-util", "io-std", "rt", "net", "macros", "time", "rt-multi-thread"] }
+tokio-tungstenite = "0.18"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 version-sync = "0.9"
 

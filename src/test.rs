@@ -3,14 +3,17 @@ use std::sync::{
     Arc,
 };
 
+use futures::StreamExt;
 use tokio::{
     io::{duplex, AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     sync::mpsc,
     time::{sleep, Duration},
 };
+use tokio_tungstenite::WebSocketStream;
 use tracing::{info, trace};
 use tracing_subscriber::filter::EnvFilter;
+use tungstenite::protocol::Role;
 
 use crate::{Config, WebSocketMultiplexor};
 
@@ -36,9 +39,15 @@ fn init_tests() {
 #[tracing::instrument]
 async fn connect_no_listen_fails() {
     let (a, b) = duplex(10);
+    let a_ws = WebSocketStream::from_raw_socket(a, Role::Client, None).await;
+    let (a_sink, a_stream) = a_ws.split();
+    let b_ws = WebSocketStream::from_raw_socket(b, Role::Server, None).await;
+    let (b_sink, b_stream) = b_ws.split();
 
-    let sm_a = WebSocketMultiplexor::new(a, Config::default().with_identifier("sm_a"));
-    let _sm_b = WebSocketMultiplexor::new(b, Config::default().with_identifier("sm_b"));
+    let sm_a =
+        WebSocketMultiplexor::new(a_sink, a_stream, Config::default().with_identifier("sm_a"));
+    let _sm_b =
+        WebSocketMultiplexor::new(b_sink, b_stream, Config::default().with_identifier("sm_b"));
 
     assert!(sm_a.connect(22).await.is_err());
 }
@@ -47,9 +56,15 @@ async fn connect_no_listen_fails() {
 #[tracing::instrument]
 async fn connect_listen_succeeds() {
     let (a, b) = duplex(10);
+    let a_ws = WebSocketStream::from_raw_socket(a, Role::Client, None).await;
+    let (a_sink, a_stream) = a_ws.split();
+    let b_ws = WebSocketStream::from_raw_socket(b, Role::Server, None).await;
+    let (b_sink, b_stream) = b_ws.split();
 
-    let sm_a = WebSocketMultiplexor::new(a, Config::default().with_identifier("sm_a"));
-    let sm_b = WebSocketMultiplexor::new(b, Config::default().with_identifier("sm_b"));
+    let sm_a =
+        WebSocketMultiplexor::new(a_sink, a_stream, Config::default().with_identifier("sm_a"));
+    let sm_b =
+        WebSocketMultiplexor::new(b_sink, b_stream, Config::default().with_identifier("sm_b"));
 
     tokio::spawn(async move {
         let _connection = sm_b.bind(22).await.unwrap().accept().await;
@@ -63,9 +78,15 @@ async fn connect_listen_succeeds() {
 #[tracing::instrument]
 async fn dropped_connection_rsts() {
     let (a, b) = duplex(10);
+    let a_ws = WebSocketStream::from_raw_socket(a, Role::Client, None).await;
+    let (a_sink, a_stream) = a_ws.split();
+    let b_ws = WebSocketStream::from_raw_socket(b, Role::Server, None).await;
+    let (b_sink, b_stream) = b_ws.split();
 
-    let sm_a = WebSocketMultiplexor::new(a, Config::default().with_identifier("sm_a"));
-    let sm_b = WebSocketMultiplexor::new(b, Config::default().with_identifier("sm_b"));
+    let sm_a =
+        WebSocketMultiplexor::new(a_sink, a_stream, Config::default().with_identifier("sm_a"));
+    let sm_b =
+        WebSocketMultiplexor::new(b_sink, b_stream, Config::default().with_identifier("sm_b"));
 
     let listener = sm_b.bind(22).await.unwrap();
     tokio::spawn(async move {
@@ -85,9 +106,15 @@ async fn connected_stream_passes_data() {
 
     let input_bytes: Vec<u8> = (0..(1024 * 1024)).map(|_| rand::random::<u8>()).collect();
     let len = input_bytes.len();
+    let a_ws = WebSocketStream::from_raw_socket(a, Role::Client, None).await;
+    let (a_sink, a_stream) = a_ws.split();
+    let b_ws = WebSocketStream::from_raw_socket(b, Role::Server, None).await;
+    let (b_sink, b_stream) = b_ws.split();
 
-    let sm_a = WebSocketMultiplexor::new(a, Config::default().with_identifier("sm_a"));
-    let sm_b = WebSocketMultiplexor::new(b, Config::default().with_identifier("sm_b"));
+    let sm_a =
+        WebSocketMultiplexor::new(a_sink, a_stream, Config::default().with_identifier("sm_a"));
+    let sm_b =
+        WebSocketMultiplexor::new(b_sink, b_stream, Config::default().with_identifier("sm_b"));
 
     let input_bytes_clone = input_bytes.clone();
     tokio::spawn(async move {
@@ -131,7 +158,11 @@ async fn wrapped_stream_disconnect() {
 
     let stream = TcpStream::connect(local_addr).await.unwrap();
 
-    let sm_a = WebSocketMultiplexor::new(stream, Config::default().with_identifier("sm_a"));
+    let a_ws = WebSocketStream::from_raw_socket(stream, Role::Client, None).await;
+    let (a_sink, a_stream) = a_ws.split();
+    let sm_a =
+        WebSocketMultiplexor::new(a_sink, a_stream, Config::default().with_identifier("sm_a"));
+
     sleep(Duration::from_millis(100)).await;
 
     assert!(matches!(sm_a.connect(1024).await, Err(..)));
@@ -150,7 +181,10 @@ async fn wrapped_stream_disconnect_listener() {
     });
 
     let stream = TcpStream::connect(local_addr).await.unwrap();
-    let sm_a = WebSocketMultiplexor::new(stream, Config::default().with_identifier("sm_a"));
+    let a_ws = WebSocketStream::from_raw_socket(stream, Role::Client, None).await;
+    let (a_sink, a_stream) = a_ws.split();
+    let sm_a =
+        WebSocketMultiplexor::new(a_sink, a_stream, Config::default().with_identifier("sm_a"));
     let listener = sm_a.bind(1024).await.unwrap();
 
     sleep(Duration::from_millis(100)).await;
@@ -167,8 +201,14 @@ async fn wrapped_stream_disconnect_after_bind_connect_accept() {
     tokio::spawn(async move {
         info!("spawn 0");
         let (stream, _) = listener.accept().await.unwrap();
-        let sm_b =
-            WebSocketMultiplexor::new_paused(stream, Config::default().with_identifier("sm_b"));
+
+        let b_ws = WebSocketStream::from_raw_socket(stream, Role::Client, None).await;
+        let (b_sink, b_stream) = b_ws.split();
+        let sm_b = WebSocketMultiplexor::new_paused(
+            b_sink,
+            b_stream,
+            Config::default().with_identifier("sm_b"),
+        );
         let listener22 = sm_b.bind(22).await.unwrap();
         let listener23 = sm_b.bind(23).await.unwrap();
 
@@ -212,7 +252,10 @@ async fn wrapped_stream_disconnect_after_bind_connect_accept() {
     });
 
     let stream = TcpStream::connect(local_addr).await.unwrap();
-    let sm_a = WebSocketMultiplexor::new(stream, Config::default().with_identifier("sm_a"));
+    let a_ws = WebSocketStream::from_raw_socket(stream, Role::Client, None).await;
+    let (a_sink, a_stream) = a_ws.split();
+    let sm_a =
+        WebSocketMultiplexor::new(a_sink, a_stream, Config::default().with_identifier("sm_a"));
 
     let watch_connected = sm_a.watch_connected();
 
@@ -258,7 +301,11 @@ async fn wrapped_stream_disconnect_subscribe_before() {
     });
 
     let stream = TcpStream::connect(local_addr).await.unwrap();
-    let sm_a = WebSocketMultiplexor::new(stream, Config::default().with_identifier("sm_a"));
+    let a_ws = WebSocketStream::from_raw_socket(stream, Role::Client, None).await;
+    let (a_sink, a_stream) = a_ws.split();
+    let sm_a =
+        WebSocketMultiplexor::new(a_sink, a_stream, Config::default().with_identifier("sm_a"));
+
     let mut connected = sm_a.watch_connected();
     assert_eq!(*connected.borrow(), true);
 
@@ -283,7 +330,10 @@ async fn wrapped_stream_disconnect_subscribe_after() {
     });
 
     let stream = TcpStream::connect(local_addr).await.unwrap();
-    let sm_a = WebSocketMultiplexor::new(stream, Config::default().with_identifier("sm_a"));
+    let a_ws = WebSocketStream::from_raw_socket(stream, Role::Client, None).await;
+    let (a_sink, a_stream) = a_ws.split();
+    let sm_a =
+        WebSocketMultiplexor::new(a_sink, a_stream, Config::default().with_identifier("sm_a"));
 
     let listener = sm_a.bind(1024).await.unwrap();
 
@@ -303,9 +353,15 @@ async fn listen_accept_multiple() {
 
     let input_bytes: Vec<u8> = (0..(1024 * 1024)).map(|_| rand::random::<u8>()).collect();
     let len = input_bytes.len();
+    let a_ws = WebSocketStream::from_raw_socket(a, Role::Client, None).await;
+    let (a_sink, a_stream) = a_ws.split();
+    let b_ws = WebSocketStream::from_raw_socket(b, Role::Server, None).await;
+    let (b_sink, b_stream) = b_ws.split();
 
-    let sm_a = WebSocketMultiplexor::new(a, Config::default().with_identifier("sm_a"));
-    let sm_b = WebSocketMultiplexor::new(b, Config::default().with_identifier("sm_b"));
+    let sm_a =
+        WebSocketMultiplexor::new(a_sink, a_stream, Config::default().with_identifier("sm_a"));
+    let sm_b =
+        WebSocketMultiplexor::new(b_sink, b_stream, Config::default().with_identifier("sm_b"));
 
     let input_bytes_clone = input_bytes.clone();
     tokio::spawn(async move {
@@ -348,9 +404,15 @@ async fn listen_multiple_accept() {
 
     let input_bytes: Vec<u8> = (0..(1024 * 1024)).map(|_| rand::random::<u8>()).collect();
     let len = input_bytes.len();
+    let a_ws = WebSocketStream::from_raw_socket(a, Role::Client, None).await;
+    let (a_sink, a_stream) = a_ws.split();
+    let b_ws = WebSocketStream::from_raw_socket(b, Role::Server, None).await;
+    let (b_sink, b_stream) = b_ws.split();
 
-    let sm_a = WebSocketMultiplexor::new(a, Config::default().with_identifier("sm_a"));
-    let sm_b = WebSocketMultiplexor::new(b, Config::default().with_identifier("sm_b"));
+    let sm_a =
+        WebSocketMultiplexor::new(a_sink, a_stream, Config::default().with_identifier("sm_a"));
+    let sm_b =
+        WebSocketMultiplexor::new(b_sink, b_stream, Config::default().with_identifier("sm_b"));
 
     let input_bytes_clone = input_bytes.clone();
     let listener = sm_b.bind(22).await.unwrap();
@@ -401,10 +463,16 @@ async fn listen_multiple_accept() {
 #[tracing::instrument]
 async fn test_start_paused() {
     let (a, b) = duplex(10);
+    let a_ws = WebSocketStream::from_raw_socket(a, Role::Client, None).await;
+    let (a_sink, a_stream) = a_ws.split();
+    let b_ws = WebSocketStream::from_raw_socket(b, Role::Server, None).await;
+    let (b_sink, b_stream) = b_ws.split();
 
-    let sm_a = WebSocketMultiplexor::new(a, Config::default().with_identifier("sm_a"));
-    let sm_b = Arc::from(WebSocketMultiplexor::new_paused(
-        b,
+    let sm_a =
+        WebSocketMultiplexor::new(a_sink, a_stream, Config::default().with_identifier("sm_a"));
+    let sm_b = Arc::new(WebSocketMultiplexor::new_paused(
+        b_sink,
+        b_stream,
         Config::default().with_identifier("sm_b"),
     ));
 
