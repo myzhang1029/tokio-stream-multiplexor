@@ -11,11 +11,10 @@ edition = "2021"
 
 [dependencies]
 async-channel = "1"
-bincode = "1"
+bytes = "1"
 futures = "0.3"
 futures-util = { version = "0.3", default-features = false }
 rand = "0.8"
-serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["io-util", "io-std", "rt", "sync", "net", "macros"] }
 tracing = "0.1"
 tungstenite = "0.18"

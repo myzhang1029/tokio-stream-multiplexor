@@ -1,17 +1,17 @@
-use serde::{Deserialize, Serialize};
+use bytes::Buf;
+use tracing::warn;
 use tungstenite::Message;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Debug)]
 pub enum Flag {
-    Syn,
-    SynAck,
-    Ack,
-    Rst,
-    Fin,
-    Unset,
+    Syn = 0,
+    SynAck = 1,
+    Ack = 2,
+    Rst = 3,
+    Fin = 4,
+    Unset = 5,
 }
 
-#[derive(Serialize, Deserialize)]
 pub struct Frame {
     pub sport: u16,
     pub dport: u16,
@@ -73,25 +73,56 @@ impl Frame {
     }
 }
 
-impl TryInto<Message> for Frame {
-    type Error = bincode::Error;
-
+impl Into<Message> for Frame {
     #[tracing::instrument(skip_all, level = "trace")]
-    fn try_into(self) -> Result<Message, Self::Error> {
-        let encoded = bincode::serialize(&self)?;
-        Ok(Message::Binary(encoded))
+    fn into(mut self) -> Message {
+        let size = std::mem::size_of::<u16>()
+            + std::mem::size_of::<u16>()
+            + std::mem::size_of::<Flag>()
+            + std::mem::size_of::<u32>()
+            + self.data.len();
+        let mut encoded = Vec::with_capacity(size);
+        encoded.extend_from_slice(&self.sport.to_be_bytes());
+        encoded.extend_from_slice(&self.dport.to_be_bytes());
+        encoded.extend_from_slice(&(self.flag as u8).to_be_bytes());
+        encoded.extend_from_slice(&self.seq.to_be_bytes());
+        encoded.append(&mut self.data);
+        Message::Binary(encoded)
     }
 }
 
 impl TryFrom<Message> for Frame {
-    type Error = bincode::Error;
-
+    type Error = std::array::TryFromSliceError;
     #[tracing::instrument(skip_all, level = "trace")]
     fn try_from(value: Message) -> Result<Self, Self::Error> {
         match value {
             // TODO: Note that we do not correctly implement RFC6455, which requires
             // handling of control frames.
-            Message::Binary(data) => bincode::deserialize(&data),
+            Message::Binary(data) => {
+                let mut data = bytes::Bytes::from(data);
+                let sport = data.get_u16();
+                let dport = data.get_u16();
+                let flag = match data.get_u8() {
+                    0 => Flag::Syn,
+                    1 => Flag::SynAck,
+                    2 => Flag::Ack,
+                    3 => Flag::Rst,
+                    4 => Flag::Fin,
+                    5 => Flag::Unset,
+                    _ => {
+                        warn!("Invalid flag value");
+                        Flag::Unset
+                    }
+                };
+                let seq = data.get_u32();
+                Ok(Self {
+                    sport,
+                    dport,
+                    flag,
+                    seq,
+                    data: Vec::from(data),
+                })
+            }
             _ => unreachable!("Only binary messages should be sent by client"),
         }
     }
